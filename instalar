@@ -1,0 +1,28 @@
+apt update
+sudo apt-get -y install ca-certificates curl gnupg lsb-release
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update
+apt-get -y install make docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
+git clone https://github.com/gleidsonom/minio-druid.git
+cd minio-druid/
+make image
+docker-compose build
+docker-compose up -d
+cd ../
+git clone https://github.com/apache/superset.git
+cd superset/
+docker-compose -f docker-compose-non-dev.yml pull
+docker-compose -f docker-compose-non-dev.yml up -d
+cd ../
+#Cria os diretorios corretos
+docker exec -it minio mkdir -p /data/logs/druid/indexing-logs/leiame.txt
+docker exec -it minio mkdir -p /data/storage/druid/leiame.txt
+docker cp minio-druid/src/xl.meta minio:/data/logs/druid/indexing-logs/leiame.txt/
+docker cp minio-druid/src/xl.meta minio:/data/storage/druid/leiame.txt/
+echo "************"
+echo "Falta ajustar no Superset acessando http://IP_REMOTO:8088/  Opcao [+] ->[Data] -> [Conect database] -> [SUported Database] selecione Apache Druid -> [SQLALCHEMY URI] informar: druid://IP_REMOTO:8888/druid/v2/sql"
+echo "************"

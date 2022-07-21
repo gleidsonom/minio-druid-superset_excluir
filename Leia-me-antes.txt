@@ -1,0 +1,7 @@
+1) Para executar a instalação, é necessario dar permissão de execução no arquivo "instalar"
+# chmod +x ./instalar
+
+2) Após a instalação, será necessario efetuar o apontamento no Superset e Druid
+acessando 
+  http://IP_REMOTO:8088/  
+       Opcao [+] ->[Data] -> [Conect database] -> [SUported Database] selecione Apache Druid -> [SQLALCHEMY URI] informar: druid://IP_REMOTO:8888/druid/v2/sql"

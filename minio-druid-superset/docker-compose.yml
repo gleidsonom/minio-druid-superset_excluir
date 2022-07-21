@@ -1,0 +1,276 @@
+version: "3.7"
+
+volumes:
+  metadata_data: {}
+  middle_var: {}
+  historical_var: {}
+  broker_var: {}
+  coordinator_var: {}
+  overlord_var: {}
+  router_var: {}
+  minio_data: {}
+
+services: 
+
+  druid_build:
+    build: 
+      context: ./src
+      dockerfile: Dockerfile.druid
+      args: 
+        - ARG_DRUID_VERSION=0.23.0
+    image: anskarl/druid:0.23.0
+    environment: 
+      - DRUID_SERVICE_PORT=8888
+      
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    ports: 
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=DRUIDDEEPSTORASGEACCESSKEY
+      - MINIO_ROOT_PASSWORD=DRUIDDEEPSTORASGESECRETKEY
+    volumes:
+      - minio_data:/data
+    command: server --console-address ":9001" /data
+    logging:
+      driver: json-file
+
+  postgres:
+    image: postgres:9.6-alpine
+    container_name: postgres
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=druid
+      - POSTGRES_USER=druid
+      - POSTGRES_PASSWORD=druid
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+
+  zookeeper:
+    container_name: zookeeper
+    image: zookeeper:3.5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 512M
+    ports:
+      - "2181:2181"
+      - "2888:2888"
+      - "3888:3888" 
+    environment:
+      - ZOO_MY_ID=1
+    logging:
+      driver: json-file
+
+  coordinator:
+    container_name: coordinator
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 512M
+    depends_on: 
+      - minio
+      - zookeeper
+      - postgres
+    ports:
+      - "8081:8081"
+    command: 
+      - coordinator
+    environment: 
+      - DRUID_SERVICE_PORT=8081
+      - DRUID_LOG_LEVEL=ERROR
+    volumes:
+      - coordinator_var:/opt/druid/var    
+    logging:
+      driver: json-file
+
+  broker:
+    container_name: broker
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    depends_on: 
+      - minio
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "8082:8082"
+    command:
+      - broker 
+    environment: 
+      - DRUID_SERVICE_PORT=8092
+      - DRUID_LOG_LEVEL=ERROR
+      - MEMORY_MAX_DIRECT_SIZE=768m
+    volumes:
+      - broker_var:/opt/druid/var   
+
+  historical:
+    container_name: historical
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 1G
+    depends_on:
+      - minio
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "8083:8083"
+    command: 
+      - historical
+    environment: 
+      - DRUID_SERVICE_PORT=8083
+      - DRUID_LOG_LEVEL=INFO
+      - MEMORY_MAX_DIRECT_SIZE=1280m
+    volumes:
+      - historical_var:/opt/druid/var
+      - ./dataset:/dataset:ro
+    logging:
+      driver: json-file
+
+  overlord:
+    container_name: overlord
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 512M
+    depends_on:
+      - minio
+      - zookeeper
+      - postgres
+    ports:
+      - "8090:8090"
+    command: 
+      - overlord
+    environment: 
+      - DRUID_SERVICE_PORT=8090
+      - DRUID_LOG_LEVEL=ERROR
+    volumes: 
+      - overlord_var:/opt/druid/var  
+      - ./dataset:/dataset:ro
+    logging:
+      driver: json-file
+
+  middlemanager:
+    container_name: middlemanager
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '2'
+          memory: 256M
+    depends_on:
+      - minio
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "8091:8091"
+    command: 
+      - middleManager
+    environment: 
+      - DRUID_SERVICE_PORT=8091
+      - DRUID_LOG_LEVEL=INFO
+    volumes: 
+      - middle_var:/opt/druid/var
+      - ./dataset:/dataset:ro
+    logging:
+      driver: json-file
+
+  router:
+    container_name: router
+    image: anskarl/druid:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '1'
+          memory: 256M
+    depends_on:
+      - minio
+      - zookeeper
+      - postgres
+      - coordinator
+      - historical
+      - broker
+      - overlord
+      - middlemanager
+    ports:
+      - "8888:8888"
+    command: router
+    environment: 
+      - DRUID_SERVICE_PORT=8888
+      - DRUID_LOG_LEVEL=ERROR
+    volumes: 
+      - router_var:/opt/druid/var      
+    logging:
+      driver: json-file
+
+
+  create_buckets:
+    build:
+      dockerfile: Dockerfile.init_deep_storage
+      context: ./src
+    depends_on:
+      - minio
+    links:
+      - minio  
+    environment:
+      - MINIO_ACCESS_KEY=DRUIDDEEPSTORASGEACCESSKEY
+      - MINIO_SECRET_KEY=DRUIDDEEPSTORASGESECRETKEY
+    logging:
+      driver: json-file
